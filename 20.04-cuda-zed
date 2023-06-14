@@ -1,0 +1,15 @@
+FROM nvidia/cuda:12.1.1-devel-ubuntu20.04
+MAINTAINER roncapat
+
+RUN \
+apt-get update && \
+DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get -y install tzdata wget zstd lsb-release udev --no-install-recommends && \
+wget -q https://stereolabs.sfo2.cdn.digitaloceanspaces.com/zedsdk/4.0/ZED_SDK_Ubuntu20_cuda12.1_v4.0.3.zstd.run  && \
+chmod ugo+rwx ZED_SDK_Ubuntu20_cuda12.1_v4.0.3.zstd.run                                                  && \
+./ZED_SDK_Ubuntu20_cuda12.1_v4.0.3.zstd.run --noexec --target ./zed && \
+cd zed && \
+./linux_install_release.sh --silent && \
+cd .. && \
+rm -rf zed ZED_SDK_Ubuntu20_cuda12.1_v4.0.3.zstd.run && \
+apt-get clean && \
+apt-get autoremove
