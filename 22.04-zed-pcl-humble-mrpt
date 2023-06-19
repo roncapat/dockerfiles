@@ -1,0 +1,31 @@
+FROM stereolabs/zed:4.0-devel-cuda12.1-ubuntu22.04 as initial
+MAINTAINER roncapat
+
+# PCL
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+--mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+--mount=type=cache,target=~/.cache/pip,sharing=locked \
+apt-get update && \
+apt-get install -y software-properties-common curl && \
+add-apt-repository universe && \
+add-apt-repository ppa:joseluisblancoc/mrpt-stable && \
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null && \
+apt-get update && \
+apt-get upgrade -y && \
+apt-get install -y ros-humble-desktop ros-dev-tools libpcl-dev ros-humble-cv-bridge ros-humble-pcl-conversions libmrpt-dev ros-humble-mrpt2
+
+RUN rosdep init
+
+RUN echo '#!/bin/bash \n\
+set -e \n\
+source "/opt/ros/humble/setup.bash" \n\
+exec "$@"' > /entrypoint.sh && \
+chmod ugo+rwx /entrypoint.sh
+
+FROM scratch
+
+COPY --from=initial / /
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["bash"]
