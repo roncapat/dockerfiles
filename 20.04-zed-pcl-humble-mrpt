@@ -1,0 +1,96 @@
+FROM stereolabs/zed:4.0-devel-cuda12.1-ubuntu20.04 as initial
+MAINTAINER roncapat
+
+# PCL
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+--mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+--mount=type=cache,target=~/.cache/pip,sharing=locked \
+wget -O pcl_13.tar.gz https://github.com/PointCloudLibrary/pcl/releases/download/pcl-1.13.1/source.tar.gz && \
+tar xf pcl_13.tar.gz && \
+rm pcl_13.tar.gz && \
+cd pcl && \
+mkdir build && \
+cd build && \
+apt-get update && \
+apt-get install -y libflann-dev libboost-filesystem1.71-dev libboost-iostreams1.71-dev libeigen3-dev libopengl-dev libgl1-mesa-dev && \ 
+cmake .. -DBUILD_global_tests=OFF -DBUILD_benchmarks=OFF -DBUILD_apps=OFF -DBUILD_CUDA=OFF -DBUILD_GPU=OFF -DBUILD_outofcore=OFF -DBUILD_people=OFF -DBUILD_simulation=OFF -DBUILD_surface_on_nurbs=OFF -DBUILD_visualization=OFF -DBUILD_examples=OFF -DPCL_DISABLE_GPU_TESTS=ON -DPCL_DISABLE_VISUALIZATION_TEST=ON -DWITH_CUDA=OFF -DWITH_DAVIDSDK=OFF -DWITH_DOCS=OFF -DWITH_DSSDK=OFF -DWITH_ENSENSO=OFF -DWITH_LIBUSB=OFF -DWITH_PCAP=OFF -DWITH_PNG=OFF -DWITH_QT=OFF -DWITH_VTK=OFF -DWITH_RSSDK=OFF -DWITH_RSSDK2=OFF -DWITH_OPENNI=OFF -DWITH_OPENNI2=OFF && \
+make -j20 install && \
+rm -rf pcl && \
+apt-get autoremove
+
+# ROS 2 HUMBLE
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+--mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+--mount=type=cache,target=~/.cache/pip,sharing=locked \
+apt-get update && \
+apt-get install -y software-properties-common && \
+add-apt-repository -y universe && \
+apt-get update && \
+apt-get install -y curl && \
+curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null && \
+apt-get update && \
+apt-get -y upgrade && \
+apt-get install -y python3-flake8-docstrings python3-pip python3-pytest-cov ros-dev-tools && \
+python3 -m pip install --force -U \
+   testresources \
+   flake8-blind-except \
+   flake8-builtins \
+   flake8-class-newline \
+   flake8-comprehensions \
+   flake8-deprecated \
+   flake8-import-order \
+   flake8-quotes \
+   "pytest>=5.3" \
+   pytest-repeat \
+   pytest-rerunfailures && \
+mkdir -p ~/ros2_humble/src && \
+cd ~/ros2_humble && \
+wget -O additional.repos https://gist.githubusercontent.com/roncapat/50d29a794a3ef567acbec6af1c3c4de6/raw/6314e8d3d99159d2cb4dcd5d42aff751741641a7/opencv.repos && \
+vcs import --input https://raw.githubusercontent.com/ros2/ros2/humble/ros2.repos src && \
+vcs import --input additional.repos src && \
+rosdep init && \
+rosdep update && \
+rosdep install --from-paths ~/ros2_humble/src --ignore-src -y --skip-keys "mrpt2 libpcl-io libpcl-common libpcl-features libpcl-filters libpcl-segmentation libpcl-surface libpcl-all-dev fastcdr rti-connext-dds-6.0.1 urdfdom_headers" && \
+colcon build --symlink-install && \
+chmod ugo+rwx ~/ros2_humble/install/setup.sh && \
+rm -rf build log && \
+apt-get autoremove -y
+
+ENV ROS_DISTRO humble
+
+# MRPT
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+--mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+--mount=type=cache,target=~/.cache/pip,sharing=locked \
+. ~/ros2_humble/install/setup.sh && \
+apt-get update && \
+apt-get install -y build-essential pkg-config cmake libopencv-dev libeigen3-dev zlib1g-dev libsuitesparse-dev libjpeg-dev libwxgtk3.0-gtk3-dev && \
+git clone https://github.com/MRPT/mrpt.git -b 2.9.1 && \
+cd mrpt && \
+git submodule update --init --recursive && \
+mkdir build && \
+cd build && \
+echo $ROS_VERSION && \
+cmake .. -DMRPT_BUILD_APPLICATIONS=OFF -DBUILD_xSENS=OFF -DMRPT_WITH_KINECT=OFF -DMRPT_EIGEN_USE_EMBEDDED_VERSION=OFF -DMRPT_ALWAYS_CHECKS_DEBUG=OFF -DMRPT_ALWAYS_CHECKS_DEBUG_MATRICES=OFF -DMRPT_HAS_ASIAN_FONTS=OFF -DBUILD_mrpt-apps=OFF -DBUILD_mrpt-hwdrivers=OFF -DMRPT_BUILD_TESTING=OFF -DMRPT_DISABLE_PYTHON_BINDINGS=ON -DMRPT_HAS_ASSERT=OFF -DMRPT_WITH_NANOGUI=OFF -DMRPT_WITH_QT=OFF -DMRPT_WITH_ROBOPEAK_LIDAR=OFF -DNANOGUI_INSTALL=OFF -DBUILD_mrpt-gui=OFF -DBUILD_mrpt-detectors=OFF -DBUILD_mrpt-graphslam=OFF -DBUILD_TESTING=OFF && \
+make -j20 install && \
+cd / && \
+rm -rf mprt && \
+apt-get autoremove -y && \
+rm -rf /var/lib/apt/lists/* && \
+rm -rf ~/.cache/pip
+
+RUN echo '#!/bin/bash \n\
+set -e \n\
+source "/root/ros2_humble/install/setup.bash" \n\
+exec "$@"' > entrypoint.sh && \
+chmod ugo+rwx entrypoint.sh && \
+mkdir -p /opt/ros/humble && \
+ln -s /root/ros2_humble/install/setup.sh /opt/ros/humble/setup.sh
+
+FROM scratch
+
+COPY --from=initial / /
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["bash"]
